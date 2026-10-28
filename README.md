@@ -47,7 +47,7 @@ Windows 将 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。端口冲突�
 
 格式设置保留未指定和保留状态；不能将现有公式中的原始数学样式完全替换为 LaTeX 后再无损还原。明确保存表达式才执行替换。每个受影响的数学文字片段会读回核验，报告列出公式数量、转换记录、字体检测和待复核项。项目保存及恢复保留公式设置与转换确认。
 
-自建示例可通过工作台“载入示例”生成；其中不含真实 MathType 对象。106 项 Python 回归、浏览器自建示例和带字体替代的 LibreOffice 参考渲染已检查；真实 MathType 文件及 Word/WPS 中编辑和分页尚未实测。此前客户 Mac 的启动权限问题仍需客户反馈诊断结果。
+自建示例可通过工作台“载入示例”生成；其中不含真实 MathType 对象。历史浏览器自建示例和 LibreOffice 参考渲染已检查；部分公式已在本机 Word 验证，真实 MathType 文件、WPS 及完整文档分页仍未实测。此前客户 Mac 的启动权限问题仍需客户反馈诊断结果。
 
 ## 参考 PDF 与模板
 
@@ -86,7 +86,7 @@ Windows 将 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。端口冲突�
 - 中央工作台：**结构预览**，用于选中对象和调整规则，不模拟最终分页。
 - 质检页可选 **LibreOffice 真实分页参考**：从已导出的 DOCX 生成 PDF、逐页显示并下载。没有 LibreOffice 时明确不可用；生成失败不显示通过。本机测试为 LibreOfficeDev 26.8，字体替代会逐项显示，视觉复核状态为待检查。
 
-**LibreOffice 分页不等于 Word/WPS 实测。** 本次没有在 Word/WPS 打开验证，不能宣称双端兼容通过。复杂浮动图、文本框、域、脚注、字体替代和最终分页需在目标软件复核。
+**LibreOffice 分页不等于 Word/WPS 实测。** 已有自建公式在本机 Word 中实测，但不能宣称完整文档双端兼容通过。复杂浮动图、文本框、域、脚注、字体替代和最终分页需在目标软件复核。
 
 ## 范围与限制
 
@@ -101,20 +101,13 @@ Windows 将 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。端口冲突�
 
 ## 验证与示例
 
-以 `validation/v5/VALIDATION.md` 的最新实际记录为准；不把模型自评或自建测试通过率当成真实论文准确率。
+仓库包含自动回归测试和 8 份自建 PDF 测试材料。工作台“载入示例”可生成自建 DOCX。协作副本在 macOS 本机执行 108 项 Python 测试通过；此结果不代表真实期刊 PDF 或所有 Word / WPS 环境已验证。
 
 ```sh
 .venv/bin/python -m unittest discover -v
-.venv/bin/python validation/v5/run_scenarios.py
 ```
 
-四场景脚本启动独立本机服务，验证实际 HTTP 请求、输出、服务重启和 ZIP。自建测试数据均有来源说明、预期参数与内容哈希。
-
-- `validation/v5/scenarios/`：四流程证据、可编辑 DOCX、报告、项目 JSON 和批量 ZIP。
-- `validation/v5/docx_fixtures/`：22 份自建 DOCX、标准答案、导出及参考渲染。
-- `validation/v5/pdf_fixtures/`：8 份自建 PDF、10 页证据、已知测量值、旋转/扫描/双栏/样本冲突。
-- `validation/v5/browser_evidence/`：真实 Chrome 操作检查、截图和下载包；浏览器测试需另装 Playwright/Chrome，不属于应用运行依赖。
-- `validation/v5/v4_source_manifest.json`：原 v4 哈希快照；交付验证记录其保持不变。
+`validation/v5/pdf_fixtures/` 包含自建 PDF 及生成脚本。历史截图、渲染结果、项目包等没有放入本公开仓库；原本机项目仍保留。GitHub Actions 自动测试已配置，实际运行状态以仓库 Actions 页面为准。
 
 ## 模块
 
