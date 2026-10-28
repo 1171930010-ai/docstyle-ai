@@ -16,7 +16,7 @@ from project_store import LocalStore,sanitize_state,decode_source,clean
 from tasks import TaskManager
 from output_render import render_output,status as render_status
 from math_fonts import inspect_font_file,font_assessment
-from course_hosting import config as hosting_config,check_docx_size
+from course_hosting import config as hosting_config,check_docx_size,session_store
 BASE=Path(__file__).resolve().parent
 STORE={};PDFSTORE={};RENDERSTORE={};LOCK=threading.RLock();MAX_BYTES=220*1024*1024
 DEEPSEEK={'key':None,'model':'deepseek-flash','checked':None}
@@ -260,16 +260,29 @@ def deepseek_request(key,model,messages,structured=False,max_tokens=2048):
 
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
+ def session_disk(self,create=True):
+  if not course_config.enabled:return DISK
+  from http.cookies import SimpleCookie
+  try:
+   cookies=SimpleCookie();cookies.load(self.headers.get('Cookie',''));cookie=cookies.get('docstyle_session');token=cookie.value if cookie else ''
+  except Exception:token=''
+  if not re.fullmatch(r'[a-f0-9]{64}',token):
+   token=secrets.token_hex(32);self._new_session_cookie=token
+  return session_store(course_config.data_dir,token) if create else None
  def send(self,status,data,kind='application/json; charset=utf-8'):
   raw=json.dumps(data,ensure_ascii=False,allow_nan=False).encode() if not isinstance(data,bytes) else data
-  self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(raw)));self.send_header('X-Content-Type-Options','nosniff');self.send_header('Cache-Control','no-store' if kind.startswith('application/json') else 'no-cache');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(raw)
+  self.send_response(status);
+  if getattr(self,'_new_session_cookie',None):self.send_header('Set-Cookie','docstyle_session='+self._new_session_cookie+'; Path=/; HttpOnly; Secure; SameSite=Lax')
+  self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(raw)));self.send_header('X-Content-Type-Options','nosniff');self.send_header('Cache-Control','no-store' if kind.startswith('application/json') else 'no-cache');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(raw)
  def allowed(self):
   origin=self.headers.get('Origin');return course_config.allowed(self.headers.get('Host'),origin) if course_config.enabled else hosting_config({}).__class__(False,port=self.server.server_port).allowed(self.headers.get('Host'),origin)
  def do_GET(self):
   if not self.allowed():return self.send(403,{'error':'仅允许本机页面访问'})
   path=urlparse(self.path).path
   try:
-   if path=='/api/health':return self.send(200,{'status':'ok','version':'5.0','engine':'local-ooxml','formula':True,'liveAiVerified':bool(DEEPSEEK['checked']),'courseMode':course_config.enabled})
+   if path=='/api/health':
+    if course_config.enabled:self.session_disk(create=False)
+    return self.send(200,{'status':'ok','version':'5.0','engine':'local-ooxml','formula':True,'liveAiVerified':bool(DEEPSEEK['checked']),'courseMode':course_config.enabled})
    if path=='/api/fonts':
     cloud=json.loads((BASE/'office_cloud_fonts.json').read_text(encoding='utf-8'));return self.send(200,{**available_fonts(),'officeFonts':cloud.get('fonts',[]),'officeSource':cloud.get('source_url',''),'officeUpdated':cloud.get('source_last_updated')})
    if path=='/api/deepseek/status':return self.send(200,deepseek_status())
@@ -277,8 +290,8 @@ class Handler(BaseHTTPRequestHandler):
    if path=='/api/sample':return self.send(200,import_document('自建演示文档.docx',create_sample()))
    if path=='/api/render/status':return self.send(200,render_status())
    if path=='/api/rules/schema':return self.send(200,schema())
-   if path=='/api/projects':return self.send(200,{'projects':DISK.list_projects()})
-   if path=='/api/templates':return self.send(200,{'templates':DISK.list_templates()})
+   if path=='/api/projects':return self.send(200,{'projects':self.session_disk().list_projects()})
+   if path=='/api/templates':return self.send(200,{'templates':self.session_disk().list_templates()})
    match=re.fullmatch(r'/api/render/([a-f0-9]{32})/(page/(\d+)|download)',path)
    if match:
     with LOCK:rendered=RENDERSTORE.get(match[1])
@@ -341,11 +354,11 @@ class Handler(BaseHTTPRequestHandler):
      if len(PDFSTORE)>=100 or sum(len(x['data']) for x in PDFSTORE.values())+len(data)>(20 if course_config.enabled else 200)*1024*1024:raise ValueError('参考PDF总量超过100份或200MB')
      PDFSTORE[identifier]={'data':data,'name':out.get('name',payload.get('name'))}
     return self.send(200,{**out,'id':identifier,'sourceData':base64.b64encode(data).decode(),'sourceHash':hashlib.sha256(data).hexdigest()})
-   if path=='/api/templates/save':return self.send(200,DISK.save_template(payload.get('name'),payload.get('purpose'),payload.get('metadata'),payload.get('items'),payload.get('pdfIds',[])))
-   if path=='/api/projects/save':return self.send(200,{'project':DISK.save_project(payload.get('name'),payload.get('state'),payload.get('id'))})
+   if path=='/api/templates/save':return self.send(200,self.session_disk().save_template(payload.get('name'),payload.get('purpose'),payload.get('metadata'),payload.get('items'),payload.get('pdfIds',[])))
+   if path=='/api/projects/save':return self.send(200,{'project':self.session_disk().save_project(payload.get('name'),payload.get('state'),payload.get('id'))})
    if path=='/api/projects/restore':
-    state=payload.get('state') if 'state' in payload else DISK.read('projects',payload.get('id'))['state'];return self.send(200,restore_project(state))
-   if path=='/api/projects/delete':return self.send(200,DISK.delete_project(payload.get('id')))
+    state=payload.get('state') if 'state' in payload else self.session_disk().read('projects',payload.get('id'))['state'];return self.send(200,restore_project(state))
+   if path=='/api/projects/delete':return self.send(200,self.session_disk().delete_project(payload.get('id')))
    if path=='/api/tasks/start':
     if course_config.enabled and len(payload.get('documents') or [])>3:raise ValueError('课程演示版每批最多处理3份文档')
     return self.send(200,TASKS.start(payload.get('documents')))

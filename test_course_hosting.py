@@ -43,3 +43,16 @@ class CourseRestoreIsolationTests(unittest.TestCase):
         with patch.object(server,'course_config',config({'DOCSTYLE_COURSE_MODE':'1'})), patch.object(server,'sanitize_state',return_value=raw), patch.object(server,'decode_source',return_value=(b'example','hash')), patch.object(server,'check_docx_size'), patch.object(server,'inspect_doc',return_value={}), patch.dict(server.STORE,{'other':{'data':b'private','name':'other.docx'}},clear=True):
             server.restore_project(raw)
             self.assertEqual(server.STORE['other']['data'],b'private')
+
+class CourseSessionStorageTests(unittest.TestCase):
+    def test_browser_sessions_get_distinct_storage_and_bad_ids_are_rejected(self):
+        import tempfile
+        from course_hosting import session_store
+        with tempfile.TemporaryDirectory() as d:
+            first=session_store(d,'a'*64)
+            second=session_store(d,'b'*64)
+            first.write('projects','c'*32,{'id':'c'*32,'name':'first','updatedAt':'now','state':{'documents':[]}})
+            self.assertEqual(len(first.list_projects()),1)
+            self.assertEqual(second.list_projects(),[])
+            with self.assertRaises(ValueError):second.read('projects','c'*32)
+            with self.assertRaises(ValueError):session_store(d,'../other')

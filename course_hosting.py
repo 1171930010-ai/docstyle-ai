@@ -36,3 +36,12 @@ def check_docx_size(data):
                 raise ValueError('课程演示版 DOCX 解压内容超过限制')
     except zipfile.BadZipFile:
         raise ValueError('无效的 DOCX 文件') from None
+
+def session_store(data_dir, session_id):
+    """Create an isolated project/template store for an opaque browser session."""
+    import re
+    from pathlib import Path
+    from project_store import LocalStore
+    if not isinstance(session_id,str) or not re.fullmatch(r'[a-f0-9]{64}',session_id):
+        raise ValueError('会话标识无效')
+    return LocalStore(Path(data_dir)/'sessions'/session_id)
