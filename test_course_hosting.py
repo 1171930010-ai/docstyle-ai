@@ -34,3 +34,12 @@ class CourseDocumentLimitsTests(unittest.TestCase):
         b=io.BytesIO()
         with zipfile.ZipFile(b,'w',compression=zipfile.ZIP_DEFLATED) as z:z.writestr('word/document.xml',b'X'*(33*1024*1024))
         with self.assertRaisesRegex(ValueError,'解压'):check_docx_size(b.getvalue())
+
+class CourseRestoreIsolationTests(unittest.TestCase):
+    def test_restore_does_not_remove_another_session_document(self):
+        import server
+        from course_hosting import config
+        raw={'documents':[{'id':'other','sourceData':'unused'}], 'workflow':{},'profile':{},'view':{}}
+        with patch.object(server,'course_config',config({'DOCSTYLE_COURSE_MODE':'1'})), patch.object(server,'sanitize_state',return_value=raw), patch.object(server,'decode_source',return_value=(b'example','hash')), patch.object(server,'check_docx_size'), patch.object(server,'inspect_doc',return_value={}), patch.dict(server.STORE,{'other':{'data':b'private','name':'other.docx'}},clear=True):
+            server.restore_project(raw)
+            self.assertEqual(server.STORE['other']['data'],b'private')

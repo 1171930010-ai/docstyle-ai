@@ -201,7 +201,7 @@ def preview_changes(settings):
 
 def restore_project(raw):
  state=sanitize_state(raw);imports=[];idmap={};pdfrecords=[];pdfmap={};newdocs={};newpdfs={}
- oldids={d['id'] for d in state['documents']};oldpdfids={p.get('id') for p in state['workflow'].get('pdfs',[])}
+ oldids=set() if course_config.enabled else {d['id'] for d in state['documents']};oldpdfids=set() if course_config.enabled else {p.get('id') for p in state['workflow'].get('pdfs',[])}
  for d in state['documents']:
   original=d['id'];data,sha=decode_source(d,(5 if course_config.enabled else 30)*1024*1024)
   if course_config.enabled:check_docx_size(data)
