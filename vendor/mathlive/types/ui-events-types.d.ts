@@ -1,0 +1,6 @@
+/* 0.111.1 */export type KeyboardModifiers = {
+    alt: boolean;
+    control: boolean;
+    shift: boolean;
+    meta: boolean;
+};

@@ -1,0 +1,81 @@
+{
+  "provenance": "SELF-BUILT SYNTHETIC PDF - NOT A JOURNAL ARTICLE",
+  "coordinateSystem": "top-left PDF points, displayed rotation",
+  "fixtures": {
+    "digital.pdf": {
+      "pages": 3,
+      "width": 612,
+      "height": 792,
+      "title": {
+        "text": "Synthetic Digital Layout",
+        "font": "Times-Bold",
+        "size": 20,
+        "x": 60,
+        "baselineTop": 90
+      },
+      "body": {
+        "font": "Times-Roman",
+        "size": 11,
+        "baselineDistance": 18
+      },
+      "referenceSize": 9,
+      "headerRepeated": true
+    },
+    "two_column.pdf": {
+      "pages": 1,
+      "columns": 2,
+      "bodySize": 10,
+      "columnOrigins": [
+        50,
+        330
+      ],
+      "titleSpansColumns": true
+    },
+    "rotated.pdf": {
+      "pages": 1,
+      "width": 612,
+      "height": 792,
+      "rotation": 90,
+      "fontSize": 16,
+      "text": "Rotated synthetic evidence"
+    },
+    "scanned.pdf": {
+      "pages": 1,
+      "characters": 0,
+      "images": 1,
+      "status": "needs_ocr"
+    },
+    "table_formula.pdf": {
+      "pages": 1,
+      "tableBbox": [
+        60,
+        180,
+        500,
+        270
+      ],
+      "equationText": "y = a + b x",
+      "equationSize": 12,
+      "tableCells": 9,
+      "borderSize": 1,
+      "cellSize": 11
+    },
+    "size_conflict.pdf": {
+      "pages": 1,
+      "bodySizes": [
+        11,
+        13
+      ],
+      "mustNotAverage": 12
+    },
+    "subset_font.pdf": {
+      "pages": 1,
+      "subsetPrefix": "AAAAAA+",
+      "fontBase": "BitstreamVeraSans-Roman",
+      "bodySize": 11
+    },
+    "missing_font.pdf": {
+      "pages": 1,
+      "fontInformationMissing": true
+    }
+  }
+}

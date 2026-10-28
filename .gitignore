@@ -1,0 +1,14 @@
+# Local documents, credentials and generated files
+.docstyle_data/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+backups/
+*.log
