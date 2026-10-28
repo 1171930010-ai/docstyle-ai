@@ -16,13 +16,16 @@ from project_store import LocalStore,sanitize_state,decode_source,clean
 from tasks import TaskManager
 from output_render import render_output,status as render_status
 from math_fonts import inspect_font_file,font_assessment
+from course_hosting import config as hosting_config
 BASE=Path(__file__).resolve().parent
 STORE={};PDFSTORE={};RENDERSTORE={};LOCK=threading.RLock();MAX_BYTES=220*1024*1024
 DEEPSEEK={'key':None,'model':'deepseek-flash','checked':None}
 DEEPSEEK_MODELS={'deepseek-flash','deepseek-v4-pro'}
-FONT_CACHE=None;FONT_LOCK=threading.Lock()
+FONT_CACHE=None;FONT_LOCK=threading.Lock();COURSE_POST_LOCK=threading.Lock()
 FONT_FALLBACK=['宋体','黑体','微软雅黑','仿宋','楷体','SimSun','SimHei','Microsoft YaHei','FangSong','KaiTi','等线','DengXian','Times New Roman','Arial','Calibri','Aptos','Cambria','Cambria Math','STIX Two Math','Helvetica','PingFang SC','苹方-简']
-DISK=LocalStore(os.environ.get('DOCSTYLE_DATA_DIR',str(BASE/'.docstyle_data')))
+course_config=hosting_config(os.environ)
+if course_config.enabled:MAX_BYTES=20*1024*1024
+DISK=LocalStore(course_config.data_dir if course_config.enabled else os.environ.get('DOCSTYLE_DATA_DIR',str(BASE/'.docstyle_data')))
 
 def available_fonts():
  global FONT_CACHE
@@ -56,7 +59,7 @@ def confirmed_defaults():
  profile['schemaVersion']=1;profile['ruleLedger']={};return profile
 
 def import_document(name,data):
- if not isinstance(data,bytes) or not data or len(data)>30*1024*1024:raise ValueError('DOCX应为1–30MB')
+ if not isinstance(data,bytes) or not data or len(data)>(5 if course_config.enabled else 30)*1024*1024:raise ValueError('DOCX超过当前运行环境限制')
  model=inspect_doc(data)
  with LOCK:
   if len(STORE)>=100 or sum(len(x['data']) for x in STORE.values())+len(data)>MAX_BYTES:raise ValueError('会话文档超过100份或220MB，请移除文档')
@@ -258,15 +261,15 @@ class Handler(BaseHTTPRequestHandler):
   raw=json.dumps(data,ensure_ascii=False,allow_nan=False).encode() if not isinstance(data,bytes) else data
   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(raw)));self.send_header('X-Content-Type-Options','nosniff');self.send_header('Cache-Control','no-store' if kind.startswith('application/json') else 'no-cache');self.send_header('Referrer-Policy','no-referrer');self.end_headers();self.wfile.write(raw)
  def allowed(self):
-  hosts={f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'};origin=self.headers.get('Origin');return self.headers.get('Host') in hosts and (not origin or origin in {'http://'+h for h in hosts})
+  origin=self.headers.get('Origin');return course_config.allowed(self.headers.get('Host'),origin) if course_config.enabled else hosting_config({}).__class__(False,port=self.server.server_port).allowed(self.headers.get('Host'),origin)
  def do_GET(self):
   if not self.allowed():return self.send(403,{'error':'仅允许本机页面访问'})
   path=urlparse(self.path).path
   try:
-   if path=='/api/health':return self.send(200,{'status':'ok','version':'5.0','engine':'local-ooxml','formula':True,'liveAiVerified':bool(DEEPSEEK['key'])})
+   if path=='/api/health':return self.send(200,{'status':'ok','version':'5.0','engine':'local-ooxml','formula':True,'liveAiVerified':bool(DEEPSEEK['checked']),'courseMode':course_config.enabled})
    if path=='/api/fonts':
     cloud=json.loads((BASE/'office_cloud_fonts.json').read_text(encoding='utf-8'));return self.send(200,{**available_fonts(),'officeFonts':cloud.get('fonts',[]),'officeSource':cloud.get('source_url',''),'officeUpdated':cloud.get('source_last_updated')})
-   if path=='/api/deepseek/status':return self.send(200,{k:DEEPSEEK[k] for k in ['model','checked']}|{'connected':bool(DEEPSEEK['key'])})
+   if path=='/api/deepseek/status':return self.send(200,deepseek_status())
    if path=='/api/defaults':return self.send(200,confirmed_defaults())
    if path=='/api/sample':return self.send(200,import_document('自建演示文档.docx',create_sample()))
    if path=='/api/render/status':return self.send(200,render_status())
@@ -291,20 +294,28 @@ class Handler(BaseHTTPRequestHandler):
    return self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
   except Exception as e:return self.send(400,{'error':safe_error(e)})
  def do_POST(self):
+  if course_config.enabled and not COURSE_POST_LOCK.acquire(blocking=False):return self.send(429,{'error':'服务器正在处理请求，请稍后重试'})
+  try:return self._post()
+  finally:
+   if course_config.enabled:COURSE_POST_LOCK.release()
+ def _post(self):
   if not self.allowed():return self.send(403,{'error':'请求来源不匹配'})
+  if course_config.enabled and self.headers.get('Origin')!=course_config.origin:return self.send(403,{'error':'课程服务器仅接受同源网页请求'})
   try:
    length=int(self.headers.get('Content-Length','0'))
-   if length<=0 or length>280*1024*1024:raise ValueError('请求大小超过280MB限制')
+   if length<=0 or length>(16 if course_config.enabled else 280)*1024*1024:raise ValueError('请求大小超过当前运行环境限制')
    if not self.headers.get('Content-Type','').startswith('application/json'):raise ValueError('仅接受JSON请求')
    payload=json.loads(self.rfile.read(length),parse_constant=lambda x:(_ for _ in ()).throw(ValueError('不支持NaN/Infinity')))
    if not isinstance(payload,dict):raise ValueError('请求应为JSON对象')
    path=urlparse(self.path).path
    if path=='/api/deepseek/disconnect':
+    if course_config.enabled:raise ValueError('服务器密钥由课程上传页面管理')
     with LOCK:DEEPSEEK.update(key=None,checked=None)
     return self.send(200,{'connected':False,'model':DEEPSEEK['model']})
    if path=='/api/deepseek/connect':
     key=str(payload.get('key','')).strip();model=payload.get('model','deepseek-flash')
     if model not in DEEPSEEK_MODELS or len(key)>512:raise ValueError('模型或密钥长度无效')
+    if course_config.enabled:return self.send(200,course_connect(key,model))
     with LOCK:candidate=key or DEEPSEEK['key']
     if not candidate:raise ValueError('请填写API Key')
     deepseek_request(candidate,model,[{'role':'user','content':'Reply with OK.'}],max_tokens=16)
@@ -321,10 +332,10 @@ class Handler(BaseHTTPRequestHandler):
     key,model=ai_credentials();return self.send(200,analyze_document(deepseek_request,key,model,document,payload.get('profile') or confirmed_defaults(),payload.get('notes',''),payload.get('locks'),payload.get('roles')))
    if path=='/api/pdf/import':
     data=base64.b64decode(payload.get('data',''),validate=True)
-    if len(data)>25*1024*1024:raise ValueError('参考PDF超过25MB')
+    if len(data)>(5 if course_config.enabled else 25)*1024*1024:raise ValueError('参考PDF超过当前运行环境限制')
     metadata=clean(payload.get('metadata') or {});out=analyze_pdf(data,str(payload.get('name','参考PDF.pdf')),metadata);identifier=secrets.token_hex(16)
     with LOCK:
-     if len(PDFSTORE)>=100 or sum(len(x['data']) for x in PDFSTORE.values())+len(data)>200*1024*1024:raise ValueError('参考PDF总量超过100份或200MB')
+     if len(PDFSTORE)>=100 or sum(len(x['data']) for x in PDFSTORE.values())+len(data)>(20 if course_config.enabled else 200)*1024*1024:raise ValueError('参考PDF总量超过100份或200MB')
      PDFSTORE[identifier]={'data':data,'name':out.get('name',payload.get('name'))}
     return self.send(200,{**out,'id':identifier,'sourceData':base64.b64encode(data).decode(),'sourceHash':hashlib.sha256(data).hexdigest()})
    if path=='/api/templates/save':return self.send(200,DISK.save_template(payload.get('name'),payload.get('purpose'),payload.get('metadata'),payload.get('items'),payload.get('pdfIds',[])))
@@ -332,7 +343,9 @@ class Handler(BaseHTTPRequestHandler):
    if path=='/api/projects/restore':
     state=payload.get('state') if 'state' in payload else DISK.read('projects',payload.get('id'))['state'];return self.send(200,restore_project(state))
    if path=='/api/projects/delete':return self.send(200,DISK.delete_project(payload.get('id')))
-   if path=='/api/tasks/start':return self.send(200,TASKS.start(payload.get('documents')))
+   if path=='/api/tasks/start':
+    if course_config.enabled and len(payload.get('documents') or [])>3:raise ValueError('课程演示版每批最多处理3份文档')
+    return self.send(200,TASKS.start(payload.get('documents')))
    if path=='/api/tasks/cancel':return self.send(200,TASKS.cancel(payload.get('id')))
    if path=='/api/tasks/retry':return self.send(200,TASKS.retry(payload.get('id'),payload.get('documents')))
    if path=='/api/import':return self.send(200,import_document(payload.get('name'),base64.b64decode(payload.get('data',''),validate=True)))
@@ -358,12 +371,24 @@ class Handler(BaseHTTPRequestHandler):
 
 def safe_error(error):
  text=str(error)[:500]
- with LOCK:key=DEEPSEEK.get('key')
+ with LOCK:key=os.environ.get('DEEPSEEK_API_KEY') if course_config.enabled else DEEPSEEK.get('key')
  if key:text=text.replace(key,'[已隐藏]')
  return text
 
+def deepseek_status():
+ with LOCK:
+  return {k:DEEPSEEK[k] for k in ['model','checked']}|{'connected':bool(DEEPSEEK['checked']) if course_config.enabled else bool(DEEPSEEK['key']),'configured':bool(os.environ.get('DEEPSEEK_API_KEY')) if course_config.enabled else bool(DEEPSEEK['key']),'serverManaged':course_config.enabled}
+
+def course_connect(key,model):
+ if key:raise ValueError('课程服务器不接受网页输入密钥；请在上传管理页配置')
+ candidate=os.environ.get('DEEPSEEK_API_KEY','')
+ if not candidate:raise ValueError('请由组员在课程上传页配置 DEEPSEEK_API_KEY')
+ deepseek_request(candidate,model,[{'role':'user','content':'Reply with OK.'}],max_tokens=16)
+ with LOCK:DEEPSEEK.update(model=model,checked=time.time())
+ return deepseek_status()
+
 def ai_credentials():
- with LOCK:key=DEEPSEEK['key'];model=DEEPSEEK['model']
+ with LOCK:key=os.environ.get('DEEPSEEK_API_KEY') if course_config.enabled else DEEPSEEK['key'];model=DEEPSEEK['model']
  if not key:raise ValueError('请先在DeepSeek API设置中连接并测试；真实AI调用尚未验证')
  return key,model
 
@@ -381,8 +406,8 @@ def open_workbench(url):
  return opened
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8770);parser.add_argument('--open',action='store_true');args=parser.parse_args()
- try:server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
+ parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=course_config.port);parser.add_argument('--open',action='store_true');args=parser.parse_args()
+ try:server=ThreadingHTTPServer((course_config.host,args.port),Handler)
  except OSError:
   if args.open:
    try:
@@ -393,7 +418,7 @@ def main():
      open_workbench(url);return
    except Exception:pass
   print(f'端口{args.port}已占用，请用--port指定其他端口。',flush=True);raise SystemExit(1)
- url=f'http://127.0.0.1:{args.port}';print(f'DocStyle AI 5.0 已启动：{url}\n文档在本机处理；确认的项目/模板保存到本机，API Key仅在内存。',flush=True)
+ url=f'http://127.0.0.1:{args.port}';print(f'DocStyle AI 5.0 已启动：{url}\n'+('课程服务器模式：项目/模板为共享数据；密钥从服务器环境读取。' if course_config.enabled else '文档在本机处理；确认的项目/模板保存到本机，API Key仅在内存。'),flush=True)
  if args.open:open_workbench(url)
  try:server.serve_forever()
  except KeyboardInterrupt:server.server_close()
