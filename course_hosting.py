@@ -25,3 +25,14 @@ def config(env):
     p=urlsplit(origin)
     if p.scheme!='https' or p.hostname!='mf01.show.lingnan.top' or p.path or p.query or p.fragment or p.username or p.password or p.port:raise ValueError('课程站点来源配置无效')
     return Config(True,'0.0.0.0',port,env.get('DATA_DIR','/data'),origin)
+
+def check_docx_size(data):
+    """Reject large decompressed packages before the OOXML engine parses them."""
+    import io, zipfile
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos=archive.infolist()
+            if len(infos)>2000 or sum(x.file_size for x in infos)>32*1024*1024:
+                raise ValueError('课程演示版 DOCX 解压内容超过限制')
+    except zipfile.BadZipFile:
+        raise ValueError('无效的 DOCX 文件') from None

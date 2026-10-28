@@ -26,3 +26,11 @@ class CourseConfigTests(unittest.TestCase):
                 self.assertEqual(server.ai_credentials()[0],'test-only-key')
                 self.assertNotIn('test-only-key',str(server.deepseek_status()))
                 with self.assertRaises(ValueError):server.course_connect('injected','deepseek-flash')
+
+class CourseDocumentLimitsTests(unittest.TestCase):
+    def test_rejects_compressed_docx_with_oversized_expansion(self):
+        import io, zipfile
+        from course_hosting import check_docx_size
+        b=io.BytesIO()
+        with zipfile.ZipFile(b,'w',compression=zipfile.ZIP_DEFLATED) as z:z.writestr('word/document.xml',b'X'*(33*1024*1024))
+        with self.assertRaisesRegex(ValueError,'解压'):check_docx_size(b.getvalue())

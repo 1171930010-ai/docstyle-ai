@@ -16,7 +16,7 @@ from project_store import LocalStore,sanitize_state,decode_source,clean
 from tasks import TaskManager
 from output_render import render_output,status as render_status
 from math_fonts import inspect_font_file,font_assessment
-from course_hosting import config as hosting_config
+from course_hosting import config as hosting_config,check_docx_size
 BASE=Path(__file__).resolve().parent
 STORE={};PDFSTORE={};RENDERSTORE={};LOCK=threading.RLock();MAX_BYTES=220*1024*1024
 DEEPSEEK={'key':None,'model':'deepseek-flash','checked':None}
@@ -60,6 +60,7 @@ def confirmed_defaults():
 
 def import_document(name,data):
  if not isinstance(data,bytes) or not data or len(data)>(5 if course_config.enabled else 30)*1024*1024:raise ValueError('DOCX超过当前运行环境限制')
+ if course_config.enabled:check_docx_size(data)
  model=inspect_doc(data)
  with LOCK:
   if len(STORE)>=100 or sum(len(x['data']) for x in STORE.values())+len(data)>MAX_BYTES:raise ValueError('会话文档超过100份或220MB，请移除文档')
@@ -202,7 +203,9 @@ def restore_project(raw):
  state=sanitize_state(raw);imports=[];idmap={};pdfrecords=[];pdfmap={};newdocs={};newpdfs={}
  oldids={d['id'] for d in state['documents']};oldpdfids={p.get('id') for p in state['workflow'].get('pdfs',[])}
  for d in state['documents']:
-  original=d['id'];data,sha=decode_source(d,30*1024*1024);model=inspect_doc(data);identifier=secrets.token_hex(16)
+  original=d['id'];data,sha=decode_source(d,(5 if course_config.enabled else 30)*1024*1024)
+  if course_config.enabled:check_docx_size(data)
+  model=inspect_doc(data);identifier=secrets.token_hex(16)
   source={'data':data,'name':Path(str(d.get('name','恢复文档.docx'))).name,'time':time.time()};newdocs[identifier]=source
   new={'id':identifier,'name':source['name'],'model':model,'sourceData':base64.b64encode(data).decode(),'sourceHash':sha}
   idmap[original]=identifier;d['id']=identifier;imports.append(new)
@@ -220,7 +223,7 @@ def restore_project(raw):
     d['result']=None;d['report']=None;d['restoreWarning']='旧输出未通过恢复核验，请重新排版；原稿和人工设置已保留'
  for p in state['workflow'].get('pdfs',[]):
   if not p.get('sourceData'):continue
-  data,sha=decode_source(p);identifier=secrets.token_hex(16);pdfmap[p.get('id')]=identifier
+  data,sha=decode_source(p,(5 if course_config.enabled else 50)*1024*1024);identifier=secrets.token_hex(16);pdfmap[p.get('id')]=identifier
   newpdfs[identifier]={'data':data,'name':p.get('name','参考PDF.pdf')};p['id']=identifier;pdfrecords.append(p)
  # Commit only when all sources and capacity checks succeeded; repeated restores
  # replace the previous IDs from this same project instead of leaking sessions.
