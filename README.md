@@ -117,3 +117,7 @@ Windows 将 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。端口冲突�
 
 ### Word 公式字体说明（2026-10-28）
 Word 原生公式的数学排版不等同于普通文字：把字体名写进 DOCX，不保证 Word 会采用。公式编辑器的字体库在 macOS 上优先列出检测到 OpenType MATH 表的字体；本机测试过 STIX Two Math，其他字体及 Windows、WPS 应在目标设备复核。选择非数学字体、未检测字体或无法确认时会提示替代风险，报告将实际显示标为待复核。字体需安装在打开文档的电脑上。本检测暂不解析 TTC 字体集合，Windows 的字体检测状态可能为未知；有 MATH 表也不是兼容保证。MathType 嵌入对象的内部字体仍需在 MathType 中修改。浏览器结构预览不保证反映所选数学字体。
+
+## 课程服务器协作分支（尚未上线）
+
+参见 `COURSE_DEPLOYMENT.md`。课程环境单独采用 `course_entry.py`，不改变本机启动；密钥由组员在课程管理页面设置。此版本仍有数据共享及内存验证限制，不能用于私人稿件或声称已通过线上验收。
